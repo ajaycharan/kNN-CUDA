@@ -21,7 +21,7 @@
   * @param dim   dimension of points = height of matrices A and B
   * @param AB    pointer on the matrix containing the wA*wB distances computed
   */
-__global__ void cuComputeDistanceTexture(texture<float, 2, cudaReadModeElementType> & texA, int wA, float * B, int wB, int pB, int dim, float* AB){
+__global__ void cuComputeDistanceTexture(texture<float, cudaTextureType2D, cudaReadModeElementType> & texA, int wA, float * B, int wB, int pB, int dim, float* AB){
     unsigned int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned int yIndex = blockIdx.y * blockDim.y + threadIdx.y;
     if ( xIndex<wB && yIndex<wA ){

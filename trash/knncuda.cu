@@ -8,7 +8,7 @@
 
 
 // Define a cuda texture type for lisibility only
-typedef texture<float, 2, cudaReadModeElementType> cudaTexture;
+typedef texture<float, cudaTextureType2D, cudaReadModeElementType> cudaTexture;
 
 
 /**
@@ -19,29 +19,31 @@ typedef texture<float, 2, cudaReadModeElementType> cudaTexture;
 bool getFreeMemoryInBytes(size_t & memoryFree)
 {
     // Get the first CUDA device
-    CUdevice device;
+    CUdevice device = 0;
     if (cuDeviceGet(&device, 0)!=CUDA_SUCCESS) {
-        printf("Unable to get CUDA device");
+        printf("Unable to get CUDA device\n");
         return false;
     }
 
     // Create the context
     CUcontext context;
-    if (cuCtxCreate(&context, CU_CTX_SCHED_AUTO, device)!=CUDA_SUCCESS) {
-        printf("Unable to create the CUDA context");
+    CUresult result = cuCtxCreate(&context, CU_CTX_SCHED_AUTO, device);
+    if (result!=CUDA_SUCCESS) {
+    // if (cuCtxCreate(&context, 0, device)!=CUDA_SUCCESS) {
+        printf("Unable to create the CUDA context : %d\n", result);
         return false;
     }
 
     // Check the free and total memory values in bytes
     size_t memory_total;
     if (cuMemGetInfo(&memoryFree, &memory_total)!=CUDA_SUCCESS) {
-        printf("Unable to access memory information");
+        printf("Unable to access memory information\n");
         return false;
     }
 
     // Detactch the context
-    if (cuCtxDetach(context)!=CUDA_SUCCESS) {
-        printf("Unable to detach the context");
+    if (cuCtxDestroy(context)!=CUDA_SUCCESS) {
+        printf("Unable to detach the context\n");
         return false;
     }
 
@@ -65,6 +67,9 @@ bool isTextureUsable(const int refWidth, const int refHeight)
         return true;
 }
 
+
+
+    cudaTexture    ref_texture;        // texture
 
 void knnCudaWithoutIndexes(float* ref_host,
                            int    ref_width,
@@ -114,7 +119,7 @@ void knnCudaWithoutIndexes(float* ref_host,
     const bool use_texture = isTextureUsable(ref_width, height);
 
     // Allocation of memory (global or texture) for reference points
-    cudaTexture    ref_texture;        // texture
+    // cudaTexture    ref_texture;        // texture
     cudaArray    * ref_array;          // texture
     float        * ref_dev;            // global
     size_t         ref_pitch;
@@ -131,14 +136,28 @@ void knnCudaWithoutIndexes(float* ref_host,
         }
 
         // Copy the memory from host to device
-        cudaMemcpyToArray(ref_array, 0, 0, ref_host, ref_width * height * sizeof(float), cudaMemcpyHostToDevice);
+        result = cudaMemcpyToArray(ref_array, 0, 0, ref_host, ref_width * height * sizeof(float), cudaMemcpyHostToDevice);
+        if (result!=cudaSuccess) {
+            printf("Error: Unable to copy memory to array\n");
+            cudaFree(query_dev);
+            cudaFree(dist_dev);
+            cudaFreeArray(ref_array);
+            return;
+        }
         
         // Set texture parameters and bind texture to the array
         ref_texture.addressMode[0] = cudaAddressModeClamp;
         ref_texture.addressMode[1] = cudaAddressModeClamp;
         ref_texture.filterMode     = cudaFilterModePoint;
         ref_texture.normalized     = 0;
-        cudaBindTextureToArray(ref_texture, ref_array);
+        result = cudaBindTextureToArray(ref_texture, ref_array);
+        if (result!=cudaSuccess) {
+            printf("Error: Unable to bind the texture to the array : %d\n", result);
+            cudaFree(query_dev);
+            cudaFree(dist_dev);
+            cudaFreeArray(ref_array);
+            return;
+        }
         
     }
     else{
@@ -175,11 +194,19 @@ void knnCudaWithoutIndexes(float* ref_host,
         if (ref_width  %16 != 0)
             g_16x16.y += 1;
 
-        // // Grid for 256x1 threads
-        // dim3 t_256x1(256, 1, 1);
-        // dim3 g_256x1(actual_query_width/256, 1, 1);
-        // if (actual_query_width%256 != 0)
-        //     g_256x1.x += 1;
+        // Grid for 256x1 threads
+        dim3 t_256x1(256, 1, 1);
+        dim3 g_256x1(actual_query_width/256, 1, 1);
+        if (actual_query_width%256 != 0)
+            g_256x1.x += 1;
+
+        // Grid for 16x16 threads on the first k elements
+        dim3 t_k_16x16(16, 16, 1);
+        dim3 g_k_16x16(actual_query_width/16, k/16, 1);
+        if (actual_query_width%16 != 0)
+            g_k_16x16.x += 1;
+        if (k  %16 != 0)
+            g_k_16x16.y += 1;
         
         // Kernel 1: Compute all the distances
         if (use_texture)
@@ -190,11 +217,11 @@ void knnCudaWithoutIndexes(float* ref_host,
         // Kernel 2: Sort each column
         cuInsertionSort<<<g_256x1,t_256x1>>>(dist_dev, actual_query_width, query_pitch, ref_width, k);
         
-        // Kernel 3: Compute square root of k-th element
-        // cuParallelSqrt<<<g_256x1,t_256x1>>>(dist_dev+(k-1)*query_pitch, query_width);
+        // Kernel 3: Compute square root of k first elements
+        cuParallelSqrt<<<g_k_16x16,t_k_16x16>>>(dist_dev, query_width, query_pitch, k);
         
         // Memory copy of output from device to host
-        cudaMemcpy2D(&dist_host[i], query_width*size_of_float, dist_dev+(k-1)*query_pitch, query_pitch_in_bytes, actual_nb_query_width*size_of_float, 1, cudaMemcpyDeviceToHost);
+        cudaMemcpy2D(&dist_host[i], query_width * sizeof(float), dist_dev, query_pitch_in_bytes, actual_query_width * sizeof(float), 1, cudaMemcpyDeviceToHost);
     }
     
     // Free memory

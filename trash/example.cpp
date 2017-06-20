@@ -42,8 +42,8 @@ void setRandomValues(float * array, const int nb, const int dim)
 int main() {
   
   // Parameters
-  int ref_nb     = 1000;    // Reference point number, max=65535
-  int query_nb   = 1000;     // Query point number,     max=65535
+  int ref_nb     = 4096;    // Reference point number, max=65535
+  int query_nb   = 4096;     // Query point number,     max=65535
   int dim        = 32;      // Dimension of points,    max=8192
   int k          = 20;     // Nearest neighbors to consider
   int iterations = 10;    // Number of iterations for statistics
@@ -74,10 +74,17 @@ int main() {
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
   float elapsed_time;
+
+
+    // // CUDA Initialisation
+    // cuInit(0);
   
   // Call kNN search CUDA
   cudaEventRecord(start, 0);
-  // for (i=0; i<iterations; i++)
+  for (int i=0; i<iterations; i++) {
+    printf("%d : ", i);
+    knnCudaWithoutIndexes(ref, ref_nb, query, query_nb, dim, k, dist);
+  }
   //   knn(ref, ref_nb, query, query_nb, dim, k, dist);
   cudaEventRecord(stop, 0);
   cudaEventSynchronize(stop);

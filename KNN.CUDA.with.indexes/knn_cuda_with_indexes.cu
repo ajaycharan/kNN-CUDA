@@ -334,13 +334,11 @@ void knn(float* ref_host, int ref_width, float* query_host, int query_width, int
 	  // Check if we can use texture memory for reference points
     unsigned int use_texture = ( ref_width*size_of_float<=MAX_TEXTURE_WIDTH_IN_BYTES && height*size_of_float<=MAX_TEXTURE_HEIGHT_IN_BYTES );
     
-    // CUDA Initialisation
-    cuInit(0);
     
     // Check free memory using driver API ; only (MAX_PART_OF_FREE_MEMORY_USED*100)% of memory will be used
     CUcontext cuContext;
     CUdevice  cuDevice=0;
-    cuCtxCreate(&cuContext, 0, cuDevice);
+    if (cuCtxCreate(&cuContext, 0, cuDevice)!=CUDA_SUCCESS) printf("Error context\n");
     cuMemGetInfo(&memory_free, &memory_total);
     cuCtxDetach (cuContext);
     
@@ -439,7 +437,7 @@ void knn(float* ref_host, int ref_width, float* query_host, int query_width, int
         cuParallelSqrt<<<g_k_16x16,t_k_16x16>>>(dist_dev, query_width, query_pitch, k);
         
         // Memory copy of output from device to host
-		cudaMemcpy2D(&dist_host[i], query_width*size_of_float, dist_dev, query_pitch_in_bytes, actual_nb_query_width*size_of_float, k, cudaMemcpyDeviceToHost);
+		    cudaMemcpy2D(&dist_host[i], query_width*size_of_float, dist_dev, query_pitch_in_bytes, actual_nb_query_width*size_of_float, k, cudaMemcpyDeviceToHost);
         cudaMemcpy2D(&ind_host[i],  query_width*size_of_int,   ind_dev,  ind_pitch_in_bytes,   actual_nb_query_width*size_of_int,   k, cudaMemcpyDeviceToHost);
     }
     

@@ -1,4 +1,4 @@
-__global__ void cuComputeDistanceTexture(texture<float, 2, cudaReadModeElementType> & texA, int wA, float * B, int wB, int pB, int dim, float* AB);
+__global__ void cuComputeDistanceTexture(texture<float, cudaTextureType2D, cudaReadModeElementType> & texA, int wA, float * B, int wB, int pB, int dim, float* AB);
 
 __global__ void cuComputeDistanceGlobal( float* A, int wA, int pA, float* B, int wB, int pB, int dim,  float* AB);
 
